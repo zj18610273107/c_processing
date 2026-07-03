@@ -54,6 +54,16 @@ int known_or_fast = 1;
 int neither_known_nor_fast = 1;
 #endif
 
+#define HARDWARE_TEST_DEBUG_MODE_CTRL 0
+
+#if HARDWARE_TEST_DEBUG_MODE_CTRL == 0
+  #define HARDWARE_TEST_TIMEOUT_START_RUN 1800 /* 30 minutes */
+  #define HARDWARE_LOOPS 999
+#else
+  #define HARDWARE_TEST_TIMEOUT_START_RUN 10 /* 30 seconds */
+  #define HARDWARE_LOOPS 3
+#endif
+
 #endif
 `.trim();
 
@@ -98,7 +108,9 @@ assert.deepStrictEqual(
     findLine('int no_feature_enabled = 1;'),
     findLine('int verbose_logging = 1;'),
     findLine('int temp_switch_enabled = 1;'),
-    findLine('int neither_known_nor_fast = 1;')
+    findLine('int neither_known_nor_fast = 1;'),
+    findLine('#define HARDWARE_TEST_TIMEOUT_START_RUN 10 /* 30 seconds */'),
+    findLine('#define HARDWARE_LOOPS 3')
   ],
   'inactive C preprocessor branch bodies should be marked inactive'
 );
@@ -156,6 +168,16 @@ assert.deepStrictEqual(
 );
 
 assert.deepStrictEqual(
+  findMatchingDirectiveLines(document, findLine('#if HARDWARE_TEST_DEBUG_MODE_CTRL == 0'), parsed.groups),
+  [
+    findLine('#if HARDWARE_TEST_DEBUG_MODE_CTRL == 0'),
+    findLine('#else', 7),
+    findLine('#endif', 8)
+  ],
+  'cursor on a numeric macro #if should highlight the full hardware control branch'
+);
+
+assert.deepStrictEqual(
   findMatchingDirectiveLines(document, findLine('#ifndef __C_PREPROCESSOR_VISUALIZER_SAMPLE_H_'), parsed.groups),
   [findLine('#ifndef __C_PREPROCESSOR_VISUALIZER_SAMPLE_H_'), document.lineCount - 1],
   'cursor on the outer #ifndef should highlight its matching #endif when there is no #else'
@@ -177,6 +199,128 @@ assert.deepStrictEqual(
   getDirectiveSpan('    #   endif'),
   { start: 4, end: 13 },
   'directive spans should include the # and directive keyword with internal spacing'
+);
+
+const EDGE_CASE_SOURCE = `
+#define MODE 2
+#define BASE_ENABLED 1
+#define COMMENTED_VALUE 0 /* disabled by default */
+#define FUNCTION_LIKE(x) 1
+
+#if MODE == 1
+int mode_one = 1;
+#elif MODE == 2
+int mode_two = 1;
+#endif
+
+#if 0
+#define BASE_ENABLED 0
+#undef COMMENTED_VALUE
+  #if 1
+  int nested_active_but_parent_inactive = 1;
+  #else
+  int nested_else_parent_inactive = 1;
+  #endif
+#endif
+
+#ifdef BASE_ENABLED
+int base_still_enabled = 1;
+#else
+int base_was_modified_by_inactive_branch = 1;
+#endif
+
+#if COMMENTED_VALUE == 0
+int commented_value_is_zero = 1;
+#else
+int commented_value_is_not_zero = 1;
+#endif
+
+#ifdef FUNCTION_LIKE
+int function_like_macro_is_defined = 1;
+#else
+int function_like_macro_is_missing = 1;
+#endif
+
+#    ifdef BASE_ENABLED
+int spaced_directive_active = 1;
+#    else
+int spaced_directive_inactive = 1;
+#    endif
+`.trim();
+
+const edgeDocument = createDocument(EDGE_CASE_SOURCE);
+const edgeParsed = parseDocument(edgeDocument);
+
+function findEdgeLine(text, occurrence = 1) {
+  let seen = 0;
+  for (let line = 0; line < edgeDocument.lineCount; line++) {
+    if (edgeDocument.lineAt(line).text.trim() === text) {
+      seen += 1;
+      if (seen === occurrence) {
+        return line;
+      }
+    }
+  }
+
+  throw new Error(`Edge line not found: ${text}`);
+}
+
+assert.deepStrictEqual(
+  edgeParsed.inactiveLines,
+  [
+    findEdgeLine('int mode_one = 1;'),
+    findEdgeLine('#define BASE_ENABLED 0'),
+    findEdgeLine('#undef COMMENTED_VALUE'),
+    findEdgeLine('int nested_active_but_parent_inactive = 1;'),
+    findEdgeLine('int nested_else_parent_inactive = 1;'),
+    findEdgeLine('int base_was_modified_by_inactive_branch = 1;'),
+    findEdgeLine('int commented_value_is_not_zero = 1;'),
+    findEdgeLine('int function_like_macro_is_missing = 1;'),
+    findEdgeLine('int spaced_directive_inactive = 1;')
+  ],
+  'edge cases should keep inactive macro directives inactive and avoid mutating active macro state'
+);
+
+assert.deepStrictEqual(
+  findMatchingDirectiveLines(edgeDocument, findEdgeLine('#if MODE == 1'), edgeParsed.groups),
+  [
+    findEdgeLine('#if MODE == 1'),
+    findEdgeLine('#elif MODE == 2'),
+    findEdgeLine('#endif')
+  ],
+  'a #if/#elif/#endif group without #else should still highlight all group directives'
+);
+
+assert.deepStrictEqual(
+  findMatchingDirectiveLines(edgeDocument, findEdgeLine('#elif MODE == 2'), edgeParsed.groups),
+  [
+    findEdgeLine('#if MODE == 1'),
+    findEdgeLine('#elif MODE == 2'),
+    findEdgeLine('#endif')
+  ],
+  'cursor on #elif without #else should still resolve the whole group'
+);
+
+assert.deepStrictEqual(
+  findMatchingDirectiveLines(edgeDocument, findEdgeLine('int mode_two = 1;'), edgeParsed.groups),
+  [],
+  'cursor on a normal C statement should not resolve directive matches'
+);
+
+assert.deepStrictEqual(
+  findMatchingDirectiveLines(edgeDocument, findEdgeLine('#    ifdef BASE_ENABLED'), edgeParsed.groups),
+  [
+    findEdgeLine('#    ifdef BASE_ENABLED'),
+    findEdgeLine('#    else'),
+    findEdgeLine('#    endif')
+  ],
+  'directives with spaces after # should still match as one preprocessor group'
+);
+
+assert.deepStrictEqual(
+  getDirectiveSpan('#    ifdef BASE_ENABLED'),
+  { start: 0, end: 10 },
+  'directive spans should include spaced #ifdef tokens'
 );
 
 console.log('C preprocessor visualizer tests passed');

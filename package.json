@@ -3,6 +3,7 @@
   "displayName": "C Preprocessor Visualizer",
   "description": "Highlights matching C preprocessor branches and dims inactive code.",
   "version": "0.0.1",
+  "publisher": "local",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -17,8 +18,14 @@
     "onStartupFinished"
   ],
   "main": "./extension.js",
+  "files": [
+    "extension.js",
+    "parser.js",
+    "README.md"
+  ],
   "scripts": {
-    "test": "node --check extension.js && node --check parser.js && node c-preprocessor-visualizer-tests/c-preprocessor-visualizer.test.js"
+    "test": "node --check extension.js && node --check parser.js && node c-preprocessor-visualizer-tests/c-preprocessor-visualizer.test.js",
+    "package": "vsce package --no-dependencies --allow-missing-repository"
   },
   "contributes": {
     "configuration": {
@@ -32,5 +39,7 @@
       }
     }
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@vscode/vsce": "^3.9.2"
+  }
 }

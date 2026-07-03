@@ -65,7 +65,12 @@ function parseDocument(document) {
       continue;
     }
 
-    if (parentActive && directive.kind === 'define') {
+    if (directive.kind === 'define') {
+      if (!parentActive) {
+        inactiveLines.push(line);
+        continue;
+      }
+
       const macro = parseMacroDefinition(directive.argument);
       if (macro) {
         macros.set(macro.name, macro.value);
@@ -73,7 +78,12 @@ function parseDocument(document) {
       continue;
     }
 
-    if (parentActive && directive.kind === 'undef') {
+    if (directive.kind === 'undef') {
+      if (!parentActive) {
+        inactiveLines.push(line);
+        continue;
+      }
+
       const name = directive.argument.match(/^([A-Za-z_]\w*)/);
       if (name) {
         macros.delete(name[1]);
@@ -118,11 +128,17 @@ function parseMacroDefinition(argument) {
     return undefined;
   }
 
-  const rawValue = match[2].trim();
+  const rawValue = stripInlineComments(match[2]).trim();
   return {
     name: match[1],
     value: normalizeMacroValue(rawValue)
   };
+}
+
+function stripInlineComments(text) {
+  return text
+    .replace(/\/\*.*?\*\//g, '')
+    .replace(/\/\/.*$/, '');
 }
 
 function normalizeMacroValue(value) {
