@@ -1,0 +1,36 @@
+{
+  "name": "c-preprocessor-visualizer",
+  "displayName": "C Preprocessor Visualizer",
+  "description": "Highlights matching C preprocessor branches and dims inactive code.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:c",
+    "onLanguage:cpp",
+    "onLanguage:objective-c",
+    "onLanguage:objective-cpp",
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "test": "node --check extension.js && node --check parser.js && node c-preprocessor-visualizer-tests/c-preprocessor-visualizer.test.js"
+  },
+  "contributes": {
+    "configuration": {
+      "title": "C Preprocessor Visualizer",
+      "properties": {
+        "cPreprocessorVisualizer.inactiveColor": {
+          "type": "string",
+          "default": "#5ac83cd9",
+          "description": "Text color used for inactive preprocessor regions."
+        }
+      }
+    }
+  },
+  "devDependencies": {}
+}
