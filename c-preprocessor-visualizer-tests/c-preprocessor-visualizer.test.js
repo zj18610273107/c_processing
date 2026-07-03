@@ -271,8 +271,11 @@ assert.deepStrictEqual(
     findEdgeLine('int mode_one = 1;'),
     findEdgeLine('#define BASE_ENABLED 0'),
     findEdgeLine('#undef COMMENTED_VALUE'),
+    findEdgeLine('#if 1'),
     findEdgeLine('int nested_active_but_parent_inactive = 1;'),
+    findEdgeLine('#else'),
     findEdgeLine('int nested_else_parent_inactive = 1;'),
+    findEdgeLine('#endif', 2),
     findEdgeLine('int base_was_modified_by_inactive_branch = 1;'),
     findEdgeLine('int commented_value_is_not_zero = 1;'),
     findEdgeLine('int function_like_macro_is_missing = 1;'),
@@ -321,6 +324,65 @@ assert.deepStrictEqual(
   getDirectiveSpan('#    ifdef BASE_ENABLED'),
   { start: 0, end: 10 },
   'directive spans should include spaced #ifdef tokens'
+);
+
+const NESTED_IN_INACTIVE_SOURCE = `
+#define CONFIG_ENABLE_LOG_DATE 0
+#define CONFIG_ENABLE_LOG_TIME 0
+
+#if CONFIG_ENABLE_LOG_DATE > 0 || CONFIG_ENABLE_LOG_TIME > 0
+static int log_append_date_time_enabled(void)
+{
+#if CONFIG_ENABLE_LOG_DATE > 0 && CONFIG_ENABLE_LOG_TIME > 0
+  #define convent_formater "date time"
+#elif CONFIG_ENABLE_LOG_DATE > 0
+  #define convent_formater "date"
+#else
+  #define convent_formater "time"
+#endif
+  return 1;
+}
+#else
+static int log_append_date_time_disabled(void)
+{
+  return 0;
+}
+#endif
+`.trim();
+
+const nestedInactiveDocument = createDocument(NESTED_IN_INACTIVE_SOURCE);
+const nestedInactiveParsed = parseDocument(nestedInactiveDocument);
+
+function findNestedInactiveLine(text, occurrence = 1) {
+  let seen = 0;
+  for (let line = 0; line < nestedInactiveDocument.lineCount; line++) {
+    if (nestedInactiveDocument.lineAt(line).text.trim() === text) {
+      seen += 1;
+      if (seen === occurrence) {
+        return line;
+      }
+    }
+  }
+
+  throw new Error(`Nested inactive line not found: ${text}`);
+}
+
+assert.deepStrictEqual(
+  nestedInactiveParsed.inactiveLines,
+  [
+    findNestedInactiveLine('static int log_append_date_time_enabled(void)'),
+    findNestedInactiveLine('{'),
+    findNestedInactiveLine('#if CONFIG_ENABLE_LOG_DATE > 0 && CONFIG_ENABLE_LOG_TIME > 0'),
+    findNestedInactiveLine('#define convent_formater "date time"'),
+    findNestedInactiveLine('#elif CONFIG_ENABLE_LOG_DATE > 0'),
+    findNestedInactiveLine('#define convent_formater "date"'),
+    findNestedInactiveLine('#else'),
+    findNestedInactiveLine('#define convent_formater "time"'),
+    findNestedInactiveLine('#endif'),
+    findNestedInactiveLine('return 1;'),
+    findNestedInactiveLine('}', 1)
+  ],
+  'nested preprocessor directives inside an inactive outer branch should also be marked inactive'
 );
 
 console.log('C preprocessor visualizer tests passed');

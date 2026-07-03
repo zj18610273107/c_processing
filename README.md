@@ -6,7 +6,8 @@
 
 - 点击 `#if`、`#ifdef`、`#ifndef`、`#elif`、`#else`、`#endif` 指令本身时，高亮同一组预处理指令。
 - 对当前未启用的条件编译代码区域使用绿色显示。
-- 只处理当前打开并获得焦点的文件，不跨文件解析 `#include`。
+- 处理当前打开并获得焦点的文件，同时会尝试解析项目内的 `#include "..."` 头文件宏。
+- 会读取 `build/compile_commands.json` 中的 `-D`、`-U` 和 `-I` 参数。
 
 ## 功能效果
 
@@ -76,6 +77,7 @@ npm test
 - `#elif`
 - `#else`
 - `#endif`
+- `#include "local_header.h"`
 - `defined(MACRO)`
 - 简单数值表达式，例如：
 
@@ -90,13 +92,28 @@ npm test
 
 这个插件不是完整 C 预处理器，目前有这些限制：
 
-- 不解析 `#include` 引入的其他文件。
-- 不读取编译器参数中的 `-D` 宏。
+- 只解析本地双引号 include，例如 `#include "config.h"`；不解析系统头 `<...>`。
+- 默认只读取 workspace 下的 `build/compile_commands.json`。
 - 不支持复杂宏展开。
 - 函数式宏会按已定义处理，但不会执行宏展开。
-- 只根据当前文件从上到下的宏定义状态判断条件分支。
+- 条件分支判断仍是轻量模拟，不等价于完整编译器预处理。
 
 这些限制是刻意保守的：插件优先用于编辑器里的快速视觉辅助，而不是替代编译器预处理结果。
+
+## 缓存
+
+插件会把 `build/compile_commands.json` 提取后的结果缓存到：
+
+```text
+build/c-preprocessor-visualizer-cache.json
+```
+
+这个缓存用于减少重复解析编译数据库的开销。缓存策略：
+
+- 只保留当前项目的一个缓存文件。
+- 当 `compile_commands.json` 修改后会自动刷新。
+- 超过 14 天未更新会自动删除并重建。
+- 头文件解析结果只保存在内存中，最多 128 条，避免 build 目录缓存膨胀。
 
 ## 项目结构
 
@@ -106,6 +123,9 @@ extension.js
 
 parser.js
   C 预处理结构解析器，负责判断分支关系和 inactive 区域。
+
+project-context.js
+  项目上下文读取，负责 compile_commands.json、include 路径和头文件宏解析。
 
 c-preprocessor-visualizer-tests/
   插件核心解析逻辑测试。

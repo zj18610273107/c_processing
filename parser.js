@@ -1,7 +1,7 @@
-const directivePattern = /^\s*#\s*(if|ifdef|ifndef|elif|else|endif|define|undef)\b(.*)$/;
+const directivePattern = /^\s*#\s*(if|ifdef|ifndef|elif|else|endif|define|undef|include)\b(.*)$/;
 
-function parseDocument(document) {
-  const macros = new Map();
+function parseDocument(document, options = {}) {
+  const macros = new Map(options.initialMacros ?? []);
   const inactiveLines = [];
   const groups = [];
   const stack = [];
@@ -19,6 +19,9 @@ function parseDocument(document) {
     }
 
     if (directive.kind === 'if' || directive.kind === 'ifdef' || directive.kind === 'ifndef') {
+      if (!parentActive) {
+        inactiveLines.push(line);
+      }
       const condition = evaluateCondition(directive, macros);
       stack.push({
         start: line,
@@ -37,6 +40,9 @@ function parseDocument(document) {
         continue;
       }
 
+      if (!frame.parentActive) {
+        inactiveLines.push(line);
+      }
       const condition = evaluateExpression(directive.argument, macros);
       frame.elifLines.push(line);
       frame.currentActive = frame.parentActive && !frame.branchTaken && condition;
@@ -50,6 +56,9 @@ function parseDocument(document) {
         continue;
       }
 
+      if (!frame.parentActive) {
+        inactiveLines.push(line);
+      }
       frame.elseLine = line;
       frame.currentActive = frame.parentActive && !frame.branchTaken;
       frame.branchTaken = true;
@@ -59,8 +68,28 @@ function parseDocument(document) {
     if (directive.kind === 'endif') {
       const frame = stack.pop();
       if (frame) {
+        if (!frame.parentActive) {
+          inactiveLines.push(line);
+        }
         frame.end = line;
         groups.push(frame);
+      }
+      continue;
+    }
+
+    if (directive.kind === 'include') {
+      if (parentActive && options.resolveInclude) {
+        const includedMacros = options.resolveInclude(directive.argument, {
+          document,
+          line,
+          macros: new Map(macros)
+        });
+        if (includedMacros) {
+          macros.clear();
+          for (const [name, value] of includedMacros) {
+            macros.set(name, value);
+          }
+        }
       }
       continue;
     }
@@ -91,7 +120,7 @@ function parseDocument(document) {
     }
   }
 
-  return { inactiveLines, groups };
+  return { inactiveLines, groups, macros };
 }
 
 function parseDirective(text) {
@@ -213,6 +242,7 @@ function getDirectiveSpan(text) {
 module.exports = {
   parseDocument,
   parseDirective,
+  parseMacroDefinition,
   findMatchingDirectiveLines,
   getDirectiveSpan
 };

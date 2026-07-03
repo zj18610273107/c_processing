@@ -1,9 +1,11 @@
 const vscode = require('vscode');
 const { parseDocument, findMatchingDirectiveLines, getDirectiveSpan } = require('./parser');
+const { createParseOptionsForFile } = require('./project-context');
 
 let matchDecoration;
 let inactiveDecoration;
 let activeEditor;
+let refreshTimer;
 const parseCache = new Map();
 
 function activate(context) {
@@ -20,17 +22,22 @@ function activate(context) {
       }
     }),
     vscode.workspace.onDidChangeTextDocument((event) => {
-      parseCache.delete(event.document.uri.toString());
-      if (activeEditor && event.document === activeEditor.document) {
-        updateDecorations();
+      if (isCOrCppDocument(event.document)) {
+        invalidateParseCache();
+        scheduleUpdateDecorations();
       }
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('cPreprocessorVisualizer.inactiveColor')) {
+      if (
+        event.affectsConfiguration('cPreprocessorVisualizer.inactiveColor') ||
+        event.affectsConfiguration('cPreprocessorVisualizer.showInactiveRegions')
+      ) {
         createDecorations();
         updateDecorations();
       }
-    })
+    }),
+    createWorkspaceWatcher('**/*.{c,cc,cpp,cxx,h,hh,hpp,hxx}'),
+    createWorkspaceWatcher('**/build/compile_commands.json')
   );
 
   activeEditor = vscode.window.activeTextEditor;
@@ -38,6 +45,28 @@ function activate(context) {
 }
 
 function deactivate() {}
+
+function createWorkspaceWatcher(globPattern) {
+  const watcher = vscode.workspace.createFileSystemWatcher(globPattern);
+  watcher.onDidCreate(handleProjectInputChanged);
+  watcher.onDidChange(handleProjectInputChanged);
+  watcher.onDidDelete(handleProjectInputChanged);
+  return watcher;
+}
+
+function handleProjectInputChanged() {
+  invalidateParseCache();
+  scheduleUpdateDecorations();
+}
+
+function invalidateParseCache() {
+  parseCache.clear();
+}
+
+function scheduleUpdateDecorations() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(updateDecorations, 80);
+}
 
 function createDecorations() {
   matchDecoration?.dispose();
@@ -66,23 +95,35 @@ function updateDecorations() {
   }
 
   const parsed = getParsedDocument(editor.document);
+  const showInactiveRegions = vscode.workspace
+    .getConfiguration('cPreprocessorVisualizer')
+    .get('showInactiveRegions', true);
   editor.setDecorations(
     inactiveDecoration,
-    parsed.inactiveLines.map((line) => editor.document.lineAt(line).range)
+    showInactiveRegions
+      ? parsed.inactiveLines.map((line) => editor.document.lineAt(line).range)
+      : []
   );
   editor.setDecorations(matchDecoration, findMatchingDirectiveRanges(editor, parsed.groups));
 }
 
 function getParsedDocument(document) {
   const cacheKey = document.uri.toString();
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath;
+  const parseOptions = createParseOptionsForFile(document.fileName, workspaceFolder);
   const cached = parseCache.get(cacheKey);
-  if (cached && cached.version === document.version) {
+  if (
+    cached &&
+    cached.version === document.version &&
+    cached.signature === parseOptions.signature
+  ) {
     return cached.parsed;
   }
 
-  const parsed = parseDocument(document);
+  const parsed = parseDocument(document, parseOptions);
   parseCache.set(cacheKey, {
     version: document.version,
+    signature: parseOptions.signature,
     parsed
   });
   return parsed;

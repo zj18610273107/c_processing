@@ -21,10 +21,11 @@
   "files": [
     "extension.js",
     "parser.js",
+    "project-context.js",
     "README.md"
   ],
   "scripts": {
-    "test": "node --check extension.js && node --check parser.js && node c-preprocessor-visualizer-tests/c-preprocessor-visualizer.test.js",
+    "test": "node --check extension.js && node --check parser.js && node --check project-context.js && node c-preprocessor-visualizer-tests/c-preprocessor-visualizer.test.js && node c-preprocessor-visualizer-tests/project-context.test.js",
     "package": "vsce package --no-dependencies --allow-missing-repository"
   },
   "contributes": {
@@ -35,6 +36,11 @@
           "type": "string",
           "default": "#5ac83cd9",
           "description": "Text color used for inactive preprocessor regions."
+        },
+        "cPreprocessorVisualizer.showInactiveRegions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to color inactive preprocessor regions."
         }
       }
     }
