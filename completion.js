@@ -36,13 +36,26 @@ const C_KEYWORDS = [
   'NULL'
 ];
 
-function collectCompletionCandidates(document, position) {
+function collectCompletionCandidates(document, position, context = {}) {
   const source = getDocumentText(document);
-  const memberAccess = isMemberAccess(document.lineAt(position.line).text, position.character);
+  const lineText = document.lineAt(position.line).text;
+  const memberAccess = getMemberAccess(lineText, position.character);
+  const preprocessorCompletion = isPreprocessorConditionLine(lineText, position.character);
   const candidates = new Map();
 
+  if (preprocessorCompletion) {
+    for (const macro of collectMacroNames(source)) {
+      addCandidate(candidates, macro, 'macro');
+    }
+    for (const macro of context.macros ?? []) {
+      addCandidate(candidates, macro[0], 'macro', macro[1]);
+    }
+    return [...candidates.values()];
+  }
+
   if (memberAccess) {
-    for (const field of collectMemberNames(source)) {
+    const fields = collectMemberNamesForAccess(source, memberAccess) ?? collectMemberNames(source);
+    for (const field of fields) {
       addCandidate(candidates, field, 'field');
     }
     return [...candidates.values()];
@@ -54,6 +67,10 @@ function collectCompletionCandidates(document, position) {
 
   for (const macro of collectMacroNames(source)) {
     addCandidate(candidates, macro, 'macro');
+  }
+
+  for (const macro of context.macros ?? []) {
+    addCandidate(candidates, macro[0], 'macro', macro[1]);
   }
 
   for (const fn of collectFunctionNames(source)) {
@@ -111,6 +128,54 @@ function collectMemberNames(source) {
   return [...fields];
 }
 
+function collectMemberNamesForAccess(source, access) {
+  const structName = findStructTypeForVariable(source, access.object);
+  if (!structName) {
+    return undefined;
+  }
+
+  const fields = collectStructFields(source).get(structName);
+  return fields ? [...fields] : undefined;
+}
+
+function collectStructFields(source) {
+  const structs = new Map();
+
+  for (const match of source.matchAll(/\b(?:typedef\s+)?(struct|union)\s+(\w+)?\s*\{([\s\S]*?)\}\s*(\w+)?\s*;/g)) {
+    const tagName = match[2];
+    const typedefName = match[4];
+    const fields = new Set();
+    collectFieldsFromBlock(match[3], fields);
+
+    if (tagName) {
+      structs.set(tagName, fields);
+    }
+    if (typedefName) {
+      structs.set(typedefName, fields);
+    }
+  }
+
+  return structs;
+}
+
+function findStructTypeForVariable(source, variableName) {
+  const escaped = escapeRegExp(variableName);
+  const structPattern = new RegExp(`\\bstruct\\s+(\\w+)\\s*\\*?\\s*${escaped}\\b`);
+  const structMatch = source.match(structPattern);
+  if (structMatch) {
+    return structMatch[1];
+  }
+
+  const typedefPattern = new RegExp(`\\b(\\w+)\\s*\\*?\\s*${escaped}\\b`);
+  for (const match of source.matchAll(typedefPattern)) {
+    if (!C_KEYWORDS.includes(match[1])) {
+      return match[1];
+    }
+  }
+
+  return undefined;
+}
+
 function collectFieldsFromBlock(block, fields) {
   for (const rawLine of block.split(/\r?\n/)) {
     const line = rawLine
@@ -132,23 +197,46 @@ function collectFieldsFromBlock(block, fields) {
 }
 
 function isMemberAccess(lineText, character) {
-  const prefix = lineText.slice(0, character);
-  return /(?:->|\.)\s*(?:[A-Za-z_]\w*)?$/.test(prefix);
+  return Boolean(getMemberAccess(lineText, character));
 }
 
-function addCandidate(candidates, label, kind) {
+function getMemberAccess(lineText, character) {
+  const prefix = lineText.slice(0, character);
+  const match = prefix.match(/([A-Za-z_]\w*)\s*(->|\.)\s*(?:[A-Za-z_]\w*)?$/);
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    object: match[1],
+    operator: match[2]
+  };
+}
+
+function isPreprocessorConditionLine(lineText, character) {
+  const prefix = lineText.slice(0, character);
+  return /^\s*#\s*(?:if|ifdef|ifndef|elif)\b/.test(prefix);
+}
+
+function addCandidate(candidates, label, kind, detail) {
   if (!label || candidates.has(label)) {
     return;
   }
 
   candidates.set(label, {
     label,
-    kind
+    kind,
+    detail
   });
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 module.exports = {
   collectCompletionCandidates,
+  collectMemberNamesForAccess,
   isLineInInactiveRegion,
   isMemberAccess
 };

@@ -1,6 +1,7 @@
 const assert = require('assert');
 const {
   collectCompletionCandidates,
+  collectMemberNamesForAccess,
   isLineInInactiveRegion,
   isMemberAccess
 } = require('../completion');
@@ -28,6 +29,10 @@ struct log_context {
   const char *message;
 };
 
+struct other_context {
+  int unrelated;
+};
+
 static int append_log(struct log_context *ctx);
 
 #if ENABLE_BLOCK
@@ -43,23 +48,40 @@ const document = createDocument(source);
 const parsed = parseDocument(document);
 
 assert.ok(
-  isLineInInactiveRegion(parsed.inactiveRegions, 12),
+  isLineInInactiveRegion(parsed.inactiveRegions, 17),
   'completion should only be enabled inside inactive regions'
 );
 
 assert.strictEqual(isMemberAccess('  ctx->', 7), true);
 assert.strictEqual(isMemberAccess('  ctx', 5), false);
 
-const labels = collectCompletionCandidates(document, { line: 14, character: 9 })
+const labels = collectCompletionCandidates(document, { line: 18, character: 9 })
   .map((candidate) => candidate.label);
 assert.ok(labels.includes('return'));
 assert.ok(labels.includes('FEATURE_NAME'));
 assert.ok(labels.includes('append_log'));
 assert.ok(labels.includes('disabled_code'));
 
-const memberLabels = collectCompletionCandidates(document, { line: 13, character: 7 })
+const memberLabels = collectCompletionCandidates(document, { line: 17, character: 7 })
   .map((candidate) => candidate.label);
 assert.ok(memberLabels.includes('level'));
 assert.ok(memberLabels.includes('message'));
+assert.ok(!memberLabels.includes('unrelated'));
+
+assert.deepStrictEqual(
+  collectMemberNamesForAccess(source, { object: 'ctx', operator: '->' }),
+  ['level', 'message'],
+  'member completion should prefer fields from the inferred struct type'
+);
+
+const preprocessorLabels = collectCompletionCandidates(
+  document,
+  { line: 14, character: '#if ENABLE'.length },
+  { macros: new Map([['EXTERNAL_CONFIG', '1']]) }
+).map((candidate) => candidate.label);
+assert.ok(preprocessorLabels.includes('ENABLE_BLOCK'));
+assert.ok(preprocessorLabels.includes('FEATURE_NAME'));
+assert.ok(preprocessorLabels.includes('EXTERNAL_CONFIG'));
+assert.ok(!preprocessorLabels.includes('return'));
 
 console.log('completion tests passed');

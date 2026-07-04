@@ -183,12 +183,16 @@ function provideInactiveRegionCompletions(document, position) {
     return undefined;
   }
 
-  return collectCompletionCandidates(document, position).map(toCompletionItem);
+  return collectCompletionCandidates(document, position, {
+    macros: parsed.macros
+  }).map(toCompletionItem);
 }
 
 function toCompletionItem(candidate) {
   const item = new vscode.CompletionItem(candidate.label, toCompletionItemKind(candidate.kind));
-  item.detail = 'C 预处理可视化 inactive 补全';
+  item.detail = candidate.detail === undefined
+    ? 'C 预处理可视化 inactive 补全'
+    : `C 预处理可视化 inactive 补全: ${candidate.detail}`;
   return item;
 }
 
