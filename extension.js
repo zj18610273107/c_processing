@@ -5,6 +5,10 @@ const {
   filterInactiveLinesForActiveBlock,
   getDirectiveSpan
 } = require('./parser');
+const {
+  collectCompletionCandidates,
+  isLineInInactiveRegion
+} = require('./completion');
 const { createParseOptionsForFile } = require('./project-context');
 
 let matchDecoration;
@@ -42,6 +46,21 @@ function activate(context) {
         updateDecorations();
       }
     }),
+    vscode.languages.registerCompletionItemProvider(
+      [
+        { language: 'c' },
+        { language: 'cpp' },
+        { language: 'objective-c' },
+        { language: 'objective-cpp' }
+      ],
+      {
+        provideCompletionItems(document, position) {
+          return provideInactiveRegionCompletions(document, position);
+        }
+      },
+      '.',
+      '>'
+    ),
     createWorkspaceWatcher('**/*.{c,cc,cpp,cxx,h,hh,hpp,hxx}'),
     createWorkspaceWatcher('**/build/compile_commands.json')
   );
@@ -149,6 +168,48 @@ function isCOrCppDocument(document) {
   }
 
   return /\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$/i.test(document.fileName);
+}
+
+function provideInactiveRegionCompletions(document, position) {
+  const enabled = vscode.workspace
+    .getConfiguration('cPreprocessorVisualizer')
+    .get('enableInactiveCompletions', true);
+  if (!enabled || !isCOrCppDocument(document)) {
+    return undefined;
+  }
+
+  const parsed = getParsedDocument(document);
+  if (!isLineInInactiveRegion(parsed.inactiveRegions, position.line)) {
+    return undefined;
+  }
+
+  return collectCompletionCandidates(document, position).map(toCompletionItem);
+}
+
+function toCompletionItem(candidate) {
+  const item = new vscode.CompletionItem(candidate.label, toCompletionItemKind(candidate.kind));
+  item.detail = 'C 预处理可视化 inactive 补全';
+  return item;
+}
+
+function toCompletionItemKind(kind) {
+  if (kind === 'keyword') {
+    return vscode.CompletionItemKind.Keyword;
+  }
+
+  if (kind === 'macro') {
+    return vscode.CompletionItemKind.Constant;
+  }
+
+  if (kind === 'function') {
+    return vscode.CompletionItemKind.Function;
+  }
+
+  if (kind === 'field') {
+    return vscode.CompletionItemKind.Field;
+  }
+
+  return vscode.CompletionItemKind.Variable;
 }
 
 function clamp(value, min, max) {

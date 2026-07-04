@@ -7,6 +7,7 @@
 - 点击 `#if`、`#ifdef`、`#ifndef`、`#elif`、`#else`、`#endif` 指令本身时，高亮同一组预处理指令。
 - 对当前未启用的条件编译代码区域使用绿色显示。
 - 光标进入未启用的连续代码区域时，该区域会恢复正常颜色，方便临时阅读和编辑。
+- 可选：在未启用区域提供轻量 C 语言补全，弥补 clangd 对 inactive 代码补全较弱的问题。
 - 处理当前打开并获得焦点的文件，同时会尝试解析项目内的 `#include "..."` 头文件宏。
 - 会读取 `build/compile_commands.json` 中的 `-D`、`-U` 和 `-I` 参数。
 
@@ -143,7 +144,8 @@ c-preprocessor-visualizer-tests/
 {
   "cPreprocessorVisualizer.inactiveColor": "#5ac83cd9",
   "cPreprocessorVisualizer.inactiveOpacity": 1,
-  "cPreprocessorVisualizer.showInactiveRegions": true
+  "cPreprocessorVisualizer.showInactiveRegions": true,
+  "cPreprocessorVisualizer.enableInactiveCompletions": true
 }
 ```
 
@@ -152,3 +154,15 @@ c-preprocessor-visualizer-tests/
 - `inactiveColor`：关闭区域文字颜色。
 - `inactiveOpacity`：关闭区域透明度，范围 `0.1` 到 `1`。
 - `showInactiveRegions`：是否显示关闭区域颜色。
+- `enableInactiveCompletions`：是否在关闭区域启用轻量补全。
+
+## Inactive 区域补全
+
+clangd 通常不会为预处理关闭区域提供完整补全。插件可以在这些区域提供一套轻量补全，来源包括：
+
+- C 语言关键词。
+- 当前文件中的宏名。
+- 当前文件中的函数名和普通标识符。
+- `.` / `->` 后的结构体字段候选。
+
+这个补全不是 clangd 的替代品，不做完整类型推导；它主要用于 inactive 区域里快速输入常见符号。
