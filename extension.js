@@ -1,5 +1,10 @@
 const vscode = require('vscode');
-const { parseDocument, findMatchingDirectiveLines, getDirectiveSpan } = require('./parser');
+const {
+  parseDocument,
+  findMatchingDirectiveLines,
+  filterInactiveLinesForActiveBlock,
+  getDirectiveSpan
+} = require('./parser');
 const { createParseOptionsForFile } = require('./project-context');
 
 let matchDecoration;
@@ -30,6 +35,7 @@ function activate(context) {
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (
         event.affectsConfiguration('cPreprocessorVisualizer.inactiveColor') ||
+        event.affectsConfiguration('cPreprocessorVisualizer.inactiveOpacity') ||
         event.affectsConfiguration('cPreprocessorVisualizer.showInactiveRegions')
       ) {
         createDecorations();
@@ -75,6 +81,9 @@ function createDecorations() {
   const inactiveColor = vscode.workspace
     .getConfiguration('cPreprocessorVisualizer')
     .get('inactiveColor', '#5ac83cd9');
+  const inactiveOpacity = vscode.workspace
+    .getConfiguration('cPreprocessorVisualizer')
+    .get('inactiveOpacity', 1);
 
   matchDecoration = vscode.window.createTextEditorDecorationType({
     backgroundColor: 'rgba(255, 214, 102, 0.22)',
@@ -84,7 +93,7 @@ function createDecorations() {
   });
 
   inactiveDecoration = vscode.window.createTextEditorDecorationType({
-    color: inactiveColor
+    color: applyOpacityToColor(inactiveColor, clamp(inactiveOpacity, 0.1, 1))
   });
 }
 
@@ -98,10 +107,15 @@ function updateDecorations() {
   const showInactiveRegions = vscode.workspace
     .getConfiguration('cPreprocessorVisualizer')
     .get('showInactiveRegions', true);
+  const inactiveLines = filterInactiveLinesForActiveBlock(
+    parsed.inactiveLines,
+    editor.selection.active.line,
+    parsed.inactiveRegions
+  );
   editor.setDecorations(
     inactiveDecoration,
     showInactiveRegions
-      ? parsed.inactiveLines.map((line) => editor.document.lineAt(line).range)
+      ? inactiveLines.map((line) => editor.document.lineAt(line).range)
       : []
   );
   editor.setDecorations(matchDecoration, findMatchingDirectiveRanges(editor, parsed.groups));
@@ -135,6 +149,49 @@ function isCOrCppDocument(document) {
   }
 
   return /\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$/i.test(document.fileName);
+}
+
+function clamp(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return max;
+  }
+
+  return Math.min(max, Math.max(min, number));
+}
+
+function applyOpacityToColor(color, opacity) {
+  const parsed = parseHexColor(color);
+  if (!parsed) {
+    return color;
+  }
+
+  const alpha = Math.round(parsed.alpha * opacity * 1000) / 1000;
+  return `rgba(${parsed.red}, ${parsed.green}, ${parsed.blue}, ${alpha})`;
+}
+
+function parseHexColor(color) {
+  const match = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+  if (!match) {
+    return undefined;
+  }
+
+  const hex = match[1];
+  if (hex.length === 3) {
+    return {
+      red: parseInt(hex[0] + hex[0], 16),
+      green: parseInt(hex[1] + hex[1], 16),
+      blue: parseInt(hex[2] + hex[2], 16),
+      alpha: 1
+    };
+  }
+
+  return {
+    red: parseInt(hex.slice(0, 2), 16),
+    green: parseInt(hex.slice(2, 4), 16),
+    blue: parseInt(hex.slice(4, 6), 16),
+    alpha: hex.length === 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1
+  };
 }
 
 function findMatchingDirectiveRanges(editor, groups) {

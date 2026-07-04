@@ -1,5 +1,10 @@
 const assert = require('assert');
-const { parseDocument, findMatchingDirectiveLines, getDirectiveSpan } = require('../parser');
+const {
+  parseDocument,
+  findMatchingDirectiveLines,
+  filterInactiveLinesForActiveBlock,
+  getDirectiveSpan
+} = require('../parser');
 
 const C_PREPROCESSOR_SOURCE = `
 #ifndef __C_PREPROCESSOR_VISUALIZER_SAMPLE_H_
@@ -383,6 +388,55 @@ assert.deepStrictEqual(
     findNestedInactiveLine('}', 1)
   ],
   'nested preprocessor directives inside an inactive outer branch should also be marked inactive'
+);
+
+assert.deepStrictEqual(
+  filterInactiveLinesForActiveBlock([2, 3, 4, 8, 9], 3),
+  [8, 9],
+  'inactive block containing the active cursor line should be shown with normal colors'
+);
+
+assert.deepStrictEqual(
+  filterInactiveLinesForActiveBlock([2, 3, 4, 8, 9], 7),
+  [2, 3, 4, 8, 9],
+  'inactive lines should remain colored when the cursor is outside inactive blocks'
+);
+
+const INACTIVE_REGION_WITH_BLANKS = `
+#define SWITCH 0
+
+#if SWITCH
+int first_inactive_line = 1;
+
+int second_inactive_line = 1;
+#else
+int active_line = 1;
+#endif
+`.trim();
+
+const inactiveRegionDocument = createDocument(INACTIVE_REGION_WITH_BLANKS);
+const inactiveRegionParsed = parseDocument(inactiveRegionDocument);
+
+assert.deepStrictEqual(
+  inactiveRegionParsed.inactiveLines,
+  [3, 5],
+  'blank lines inside inactive branches should not be decorated directly'
+);
+
+assert.deepStrictEqual(
+  inactiveRegionParsed.inactiveRegions,
+  [{ start: 3, end: 5 }],
+  'inactive region should span through blank lines inside the same inactive branch'
+);
+
+assert.deepStrictEqual(
+  filterInactiveLinesForActiveBlock(
+    inactiveRegionParsed.inactiveLines,
+    4,
+    inactiveRegionParsed.inactiveRegions
+  ),
+  [],
+  'cursor on a blank line inside an inactive region should restore the whole region'
 );
 
 console.log('C preprocessor visualizer tests passed');

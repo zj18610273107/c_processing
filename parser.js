@@ -3,23 +3,31 @@ const directivePattern = /^\s*#\s*(if|ifdef|ifndef|elif|else|endif|define|undef|
 function parseDocument(document, options = {}) {
   const macros = new Map(options.initialMacros ?? []);
   const inactiveLines = [];
+  const inactiveRegions = [];
   const groups = [];
   const stack = [];
+  let inactiveRegionStart;
 
   for (let line = 0; line < document.lineCount; line++) {
     const textLine = document.lineAt(line);
     const directive = parseDirective(textLine.text);
     const parentActive = stack.length === 0 ? true : stack[stack.length - 1].currentActive;
+    let lineInInactiveRegion = false;
 
     if (!directive) {
-      if (!parentActive && !textLine.isEmptyOrWhitespace) {
-        inactiveLines.push(line);
+      if (!parentActive) {
+        lineInInactiveRegion = true;
+        if (!textLine.isEmptyOrWhitespace) {
+          inactiveLines.push(line);
+        }
       }
+      updateInactiveRegion(lineInInactiveRegion, line);
       continue;
     }
 
     if (directive.kind === 'if' || directive.kind === 'ifdef' || directive.kind === 'ifndef') {
       if (!parentActive) {
+        lineInInactiveRegion = true;
         inactiveLines.push(line);
       }
       const condition = evaluateCondition(directive, macros);
@@ -31,6 +39,7 @@ function parseDocument(document, options = {}) {
         currentActive: parentActive && condition,
         branchTaken: condition
       });
+      updateInactiveRegion(lineInInactiveRegion, line);
       continue;
     }
 
@@ -41,12 +50,14 @@ function parseDocument(document, options = {}) {
       }
 
       if (!frame.parentActive) {
+        lineInInactiveRegion = true;
         inactiveLines.push(line);
       }
       const condition = evaluateExpression(directive.argument, macros);
       frame.elifLines.push(line);
       frame.currentActive = frame.parentActive && !frame.branchTaken && condition;
       frame.branchTaken = frame.branchTaken || condition;
+      updateInactiveRegion(lineInInactiveRegion, line);
       continue;
     }
 
@@ -57,11 +68,13 @@ function parseDocument(document, options = {}) {
       }
 
       if (!frame.parentActive) {
+        lineInInactiveRegion = true;
         inactiveLines.push(line);
       }
       frame.elseLine = line;
       frame.currentActive = frame.parentActive && !frame.branchTaken;
       frame.branchTaken = true;
+      updateInactiveRegion(lineInInactiveRegion, line);
       continue;
     }
 
@@ -69,11 +82,13 @@ function parseDocument(document, options = {}) {
       const frame = stack.pop();
       if (frame) {
         if (!frame.parentActive) {
+          lineInInactiveRegion = true;
           inactiveLines.push(line);
         }
         frame.end = line;
         groups.push(frame);
       }
+      updateInactiveRegion(lineInInactiveRegion, line);
       continue;
     }
 
@@ -91,12 +106,15 @@ function parseDocument(document, options = {}) {
           }
         }
       }
+      updateInactiveRegion(lineInInactiveRegion, line);
       continue;
     }
 
     if (directive.kind === 'define') {
       if (!parentActive) {
+        lineInInactiveRegion = true;
         inactiveLines.push(line);
+        updateInactiveRegion(lineInInactiveRegion, line);
         continue;
       }
 
@@ -104,12 +122,15 @@ function parseDocument(document, options = {}) {
       if (macro) {
         macros.set(macro.name, macro.value);
       }
+      updateInactiveRegion(lineInInactiveRegion, line);
       continue;
     }
 
     if (directive.kind === 'undef') {
       if (!parentActive) {
+        lineInInactiveRegion = true;
         inactiveLines.push(line);
+        updateInactiveRegion(lineInInactiveRegion, line);
         continue;
       }
 
@@ -118,9 +139,35 @@ function parseDocument(document, options = {}) {
         macros.delete(name[1]);
       }
     }
+    updateInactiveRegion(lineInInactiveRegion, line);
   }
 
-  return { inactiveLines, groups, macros };
+  closeInactiveRegion(document.lineCount - 1);
+
+  return { inactiveLines, inactiveRegions, groups, macros };
+
+  function updateInactiveRegion(isInactive, line) {
+    if (isInactive) {
+      if (inactiveRegionStart === undefined) {
+        inactiveRegionStart = line;
+      }
+      return;
+    }
+
+    closeInactiveRegion(line - 1);
+  }
+
+  function closeInactiveRegion(end) {
+    if (inactiveRegionStart === undefined) {
+      return;
+    }
+
+    inactiveRegions.push({
+      start: inactiveRegionStart,
+      end
+    });
+    inactiveRegionStart = undefined;
+  }
 }
 
 function parseDirective(text) {
@@ -227,6 +274,31 @@ function findMatchingDirectiveLines(document, cursorLine, groups) {
   return [];
 }
 
+function filterInactiveLinesForActiveBlock(inactiveLines, activeLine, inactiveRegions = []) {
+  const region = inactiveRegions.find(({ start, end }) => activeLine >= start && activeLine <= end);
+  if (region) {
+    return inactiveLines.filter((line) => line < region.start || line > region.end);
+  }
+
+  if (!inactiveLines.includes(activeLine)) {
+    return inactiveLines;
+  }
+
+  const inactiveSet = new Set(inactiveLines);
+  let start = activeLine;
+  let end = activeLine;
+
+  while (inactiveSet.has(start - 1)) {
+    start -= 1;
+  }
+
+  while (inactiveSet.has(end + 1)) {
+    end += 1;
+  }
+
+  return inactiveLines.filter((line) => line < start || line > end);
+}
+
 function getDirectiveSpan(text) {
   const match = text.match(/^(\s*)(#\s*(?:if|ifdef|ifndef|elif|else|endif|define|undef))\b/);
   if (!match) {
@@ -244,5 +316,6 @@ module.exports = {
   parseDirective,
   parseMacroDefinition,
   findMatchingDirectiveLines,
+  filterInactiveLinesForActiveBlock,
   getDirectiveSpan
 };

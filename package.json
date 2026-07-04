@@ -30,17 +30,24 @@
   },
   "contributes": {
     "configuration": {
-      "title": "C Preprocessor Visualizer",
+      "title": "C 预处理可视化",
       "properties": {
         "cPreprocessorVisualizer.inactiveColor": {
           "type": "string",
           "default": "#5ac83cd9",
-          "description": "Text color used for inactive preprocessor regions."
+          "description": "关闭的预处理代码区域使用的文字颜色。"
+        },
+        "cPreprocessorVisualizer.inactiveOpacity": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0.1,
+          "maximum": 1,
+          "description": "关闭的预处理代码区域透明度，1 表示不额外透明，0.1 表示最淡。"
         },
         "cPreprocessorVisualizer.showInactiveRegions": {
           "type": "boolean",
           "default": true,
-          "description": "Whether to color inactive preprocessor regions."
+          "description": "是否用颜色标识关闭的预处理代码区域。"
         }
       }
     }

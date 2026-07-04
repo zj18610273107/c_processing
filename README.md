@@ -6,6 +6,7 @@
 
 - 点击 `#if`、`#ifdef`、`#ifndef`、`#elif`、`#else`、`#endif` 指令本身时，高亮同一组预处理指令。
 - 对当前未启用的条件编译代码区域使用绿色显示。
+- 光标进入未启用的连续代码区域时，该区域会恢复正常颜色，方便临时阅读和编辑。
 - 处理当前打开并获得焦点的文件，同时会尝试解析项目内的 `#include "..."` 头文件宏。
 - 会读取 `build/compile_commands.json` 中的 `-D`、`-U` 和 `-I` 参数。
 
@@ -140,6 +141,14 @@ c-preprocessor-visualizer-tests/
 
 ```json
 {
-  "cPreprocessorVisualizer.inactiveColor": "#5ac83cd9"
+  "cPreprocessorVisualizer.inactiveColor": "#5ac83cd9",
+  "cPreprocessorVisualizer.inactiveOpacity": 1,
+  "cPreprocessorVisualizer.showInactiveRegions": true
 }
 ```
+
+说明：
+
+- `inactiveColor`：关闭区域文字颜色。
+- `inactiveOpacity`：关闭区域透明度，范围 `0.1` 到 `1`。
+- `showInactiveRegions`：是否显示关闭区域颜色。
