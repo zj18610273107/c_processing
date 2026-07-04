@@ -17,14 +17,19 @@ function createParseOptionsForFile(fileName, workspaceFolder) {
     root
   ]);
   const includeCache = new Map();
+  const includedTexts = [];
+  const capturedIncludes = new Set();
 
   return {
     initialMacros: compileContext.macros,
+    includedTexts,
     resolveInclude: createIncludeResolver({
       root,
       includeDirs,
       includeCache,
-      visited: new Set()
+      visited: new Set(),
+      includedTexts,
+      capturedIncludes
     }),
     signature: [
       projectData.signature,
@@ -236,9 +241,9 @@ function findCompileContext(entries, fileName) {
   };
 }
 
-function createIncludeResolver({ root, includeDirs, includeCache, visited }) {
+function createIncludeResolver({ root, includeDirs, includeCache, visited, includedTexts, capturedIncludes }) {
   return function resolveInclude(argument, context) {
-    const includePath = parseQuotedInclude(argument);
+    const includePath = parseIncludeArgument(argument);
     if (!includePath) {
       return context.macros;
     }
@@ -265,6 +270,11 @@ function createIncludeResolver({ root, includeDirs, includeCache, visited }) {
       return context.macros;
     }
 
+    if (includedTexts && capturedIncludes && !capturedIncludes.has(resolved)) {
+      capturedIncludes.add(resolved);
+      includedTexts.push(text);
+    }
+
     visited.add(resolved);
     const document = createTextDocument(resolved, text);
     const parsed = parseDocument(document, {
@@ -273,7 +283,9 @@ function createIncludeResolver({ root, includeDirs, includeCache, visited }) {
         root,
         includeDirs: [path.dirname(resolved), ...includeDirs],
         includeCache,
-        visited
+        visited,
+        includedTexts,
+        capturedIncludes
       })
     });
     visited.delete(resolved);
@@ -290,9 +302,9 @@ function rememberIncludeCache(cache, key, value) {
   cache.set(key, value);
 }
 
-function parseQuotedInclude(argument) {
-  const match = argument.match(/^"([^"]+)"/);
-  return match?.[1];
+function parseIncludeArgument(argument) {
+  const match = argument.match(/^(?:"([^"]+)"|<([^>]+)>)/);
+  return match?.[1] ?? match?.[2];
 }
 
 function resolveIncludePath(includePath, searchDirs) {

@@ -163,7 +163,8 @@ clangd 通常不会为预处理关闭区域提供完整补全。插件可以在�
 - C 语言关键词。
 - 当前文件中的宏名。
 - `build/compile_commands.json` 和 include 头文件解析得到的宏名。
-- 当前文件中的函数名和普通标识符。
+- 当前文件和已解析 include 头文件中的枚举常量、函数名和普通标识符；函数补全会插入 `函数名(参数类型...)`，不会使用已有调用里的实参值。
+- 常见 C 库函数签名，例如 `printf(const char *restrict, ...)`、`snprintf(char *restrict, size_t, const char *restrict, ...)`；`void` 参数会保留为 `func(void)`。
 - `.` / `->` 后的结构体字段候选。
 - 在 `#if/#ifdef/#ifndef/#elif` 行内会优先只补宏名。
 

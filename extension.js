@@ -154,6 +154,7 @@ function getParsedDocument(document) {
   }
 
   const parsed = parseDocument(document, parseOptions);
+  parsed.includedTexts = parseOptions.includedTexts ?? [];
   parseCache.set(cacheKey, {
     version: document.version,
     signature: parseOptions.signature,
@@ -184,16 +185,27 @@ function provideInactiveRegionCompletions(document, position) {
   }
 
   return collectCompletionCandidates(document, position, {
-    macros: parsed.macros
+    macros: parsed.macros,
+    sourceTexts: parsed.includedTexts
   }).map(toCompletionItem);
 }
 
 function toCompletionItem(candidate) {
   const item = new vscode.CompletionItem(candidate.label, toCompletionItemKind(candidate.kind));
-  item.detail = candidate.detail === undefined
-    ? 'C 预处理可视化 inactive 补全'
-    : `C 预处理可视化 inactive 补全: ${candidate.detail}`;
+  item.insertText = candidate.insertText;
+  item.detail = toCompletionDetail(candidate);
+  if (candidate.detail !== undefined) {
+    item.documentation = new vscode.MarkdownString(`\`${candidate.detail}\``);
+  }
   return item;
+}
+
+function toCompletionDetail(candidate) {
+  if (candidate.kind === 'function' && candidate.detail !== undefined) {
+    return `函数 ${candidate.detail}`;
+  }
+
+  return 'C 预处理可视化 inactive 补全';
 }
 
 function toCompletionItemKind(kind) {
@@ -207,6 +219,10 @@ function toCompletionItemKind(kind) {
 
   if (kind === 'function') {
     return vscode.CompletionItemKind.Function;
+  }
+
+  if (kind === 'enum') {
+    return vscode.CompletionItemKind.EnumMember;
   }
 
   if (kind === 'field') {

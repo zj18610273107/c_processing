@@ -36,19 +36,53 @@ const C_KEYWORDS = [
   'NULL'
 ];
 
+const C_LIBRARY_FUNCTIONS = [
+  { name: 'printf', parameterTypes: ['const char *restrict', '...'] },
+  { name: 'fprintf', parameterTypes: ['FILE *restrict', 'const char *restrict', '...'] },
+  { name: 'sprintf', parameterTypes: ['char *restrict', 'const char *restrict', '...'] },
+  { name: 'snprintf', parameterTypes: ['char *restrict', 'size_t', 'const char *restrict', '...'] },
+  { name: 'scanf', parameterTypes: ['const char *restrict', '...'] },
+  { name: 'sscanf', parameterTypes: ['const char *restrict', 'const char *restrict', '...'] },
+  { name: 'fscanf', parameterTypes: ['FILE *restrict', 'const char *restrict', '...'] },
+  { name: 'malloc', parameterTypes: ['size_t'] },
+  { name: 'calloc', parameterTypes: ['size_t', 'size_t'] },
+  { name: 'realloc', parameterTypes: ['void *', 'size_t'] },
+  { name: 'free', parameterTypes: ['void *'] },
+  { name: 'memset', parameterTypes: ['void *', 'int', 'size_t'] },
+  { name: 'memcpy', parameterTypes: ['void *restrict', 'const void *restrict', 'size_t'] },
+  { name: 'memmove', parameterTypes: ['void *', 'const void *', 'size_t'] },
+  { name: 'memcmp', parameterTypes: ['const void *', 'const void *', 'size_t'] },
+  { name: 'strlen', parameterTypes: ['const char *'] },
+  { name: 'strcmp', parameterTypes: ['const char *', 'const char *'] },
+  { name: 'strncmp', parameterTypes: ['const char *', 'const char *', 'size_t'] },
+  { name: 'strcpy', parameterTypes: ['char *restrict', 'const char *restrict'] },
+  { name: 'strncpy', parameterTypes: ['char *restrict', 'const char *restrict', 'size_t'] },
+  { name: 'strdup', parameterTypes: ['const char *'] },
+  { name: 'fopen', parameterTypes: ['const char *restrict', 'const char *restrict'] },
+  { name: 'fclose', parameterTypes: ['FILE *'] },
+  { name: 'fread', parameterTypes: ['void *restrict', 'size_t', 'size_t', 'FILE *restrict'] },
+  { name: 'fwrite', parameterTypes: ['const void *restrict', 'size_t', 'size_t', 'FILE *restrict'] },
+  { name: 'fgets', parameterTypes: ['char *restrict', 'int', 'FILE *restrict'] },
+  { name: 'fputs', parameterTypes: ['const char *restrict', 'FILE *restrict'] },
+  { name: 'puts', parameterTypes: ['const char *'] },
+  { name: 'putchar', parameterTypes: ['int'] },
+  { name: 'getchar', parameterTypes: ['void'] },
+  { name: 'localtime_r', parameterTypes: ['const time_t *restrict', 'struct tm *restrict'] }
+];
+
 function collectCompletionCandidates(document, position, context = {}) {
-  const source = getDocumentText(document);
+  const source = getCompletionSource(document, context);
   const lineText = document.lineAt(position.line).text;
   const memberAccess = getMemberAccess(lineText, position.character);
   const preprocessorCompletion = isPreprocessorConditionLine(lineText, position.character);
   const candidates = new Map();
 
   if (preprocessorCompletion) {
-    for (const macro of collectMacroNames(source)) {
-      addCandidate(candidates, macro, 'macro');
+    for (const macro of collectMacros(source)) {
+      addCandidate(candidates, macro.name, 'macro');
     }
     for (const macro of context.macros ?? []) {
-      addCandidate(candidates, macro[0], 'macro', macro[1]);
+      addCandidate(candidates, macro[0], 'macro');
     }
     return [...candidates.values()];
   }
@@ -65,16 +99,24 @@ function collectCompletionCandidates(document, position, context = {}) {
     addCandidate(candidates, keyword, 'keyword');
   }
 
-  for (const macro of collectMacroNames(source)) {
-    addCandidate(candidates, macro, 'macro');
+  for (const macro of collectMacros(source)) {
+    addCandidate(candidates, macro.name, 'macro');
   }
 
   for (const macro of context.macros ?? []) {
-    addCandidate(candidates, macro[0], 'macro', macro[1]);
+    addCandidate(candidates, macro[0], 'macro');
   }
 
-  for (const fn of collectFunctionNames(source)) {
-    addCandidate(candidates, fn, 'function');
+  for (const enumConstant of collectEnumConstants(source)) {
+    addCandidate(candidates, enumConstant.name, 'enum');
+  }
+
+  for (const fn of collectFunctions(source)) {
+    addCandidate(candidates, fn.name, 'function', fn.signature, `${fn.name}(${fn.parameterTypes.join(', ')})`);
+  }
+
+  for (const fn of C_LIBRARY_FUNCTIONS) {
+    addCandidate(candidates, fn.name, 'function', functionSignature(fn), `${fn.name}(${fn.parameterTypes.join(', ')})`);
   }
 
   for (const identifier of collectIdentifiers(source)) {
@@ -96,15 +138,52 @@ function getDocumentText(document) {
   return lines.join('\n');
 }
 
-function collectMacroNames(source) {
-  return [...source.matchAll(/^\s*#\s*define\s+([A-Za-z_]\w*)/gm)]
-    .map((match) => match[1]);
+function getCompletionSource(document, context) {
+  const parts = [getDocumentText(document)];
+  if (typeof context.extraSource === 'string' && context.extraSource) {
+    parts.push(context.extraSource);
+  }
+  if (Array.isArray(context.sourceTexts)) {
+    parts.push(...context.sourceTexts.filter((text) => typeof text === 'string' && text));
+  }
+  return parts.join('\n');
 }
 
-function collectFunctionNames(source) {
-  return [...source.matchAll(/\b([A-Za-z_]\w*)\s*\([^;{}#]*\)\s*(?:\{|;)/g)]
-    .map((match) => match[1])
-    .filter((name) => !C_KEYWORDS.includes(name));
+function collectMacros(source) {
+  return [...source.matchAll(/^\s*#\s*define\s+([A-Za-z_]\w*)/gm)]
+    .map((match) => {
+      const line = source.slice(match.index, source.indexOf('\n', match.index) === -1 ? undefined : source.indexOf('\n', match.index));
+      const value = line
+        .replace(/^\s*#\s*define\s+[A-Za-z_]\w*(?:\([^)]*\))?\s*/, '')
+        .replace(/\/\*.*?\*\//g, '')
+        .replace(/\/\/.*$/, '')
+        .trim();
+      return {
+        name: match[1],
+        value: value || undefined
+      };
+    });
+}
+
+function collectFunctions(source) {
+  const functions = [];
+
+  for (const match of source.matchAll(/^\s*(?!if\b|for\b|while\b|switch\b)([A-Za-z_][\w\s*]*?)\s+([A-Za-z_]\w*)\s*\(([^;{}#]*)\)\s*(?:\{|;)/gm)) {
+    const returnType = normalizeType(match[1]);
+    const name = match[2];
+    if (!returnType || C_KEYWORDS.includes(name)) {
+      continue;
+    }
+
+      const parameterTypes = parseParameterTypes(match[3]);
+      functions.push({
+        name,
+        parameterTypes,
+        signature: functionSignature({ name, parameterTypes })
+      });
+  }
+
+  return functions;
 }
 
 function collectIdentifiers(source) {
@@ -112,6 +191,112 @@ function collectIdentifiers(source) {
     .map((match) => match[0])
     .filter((name) => name.length > 1)
     .filter((name) => !C_KEYWORDS.includes(name));
+}
+
+function collectEnumConstants(source) {
+  const constants = [];
+
+  for (const match of source.matchAll(/\benum\s+\w*\s*\{([\s\S]*?)\}\s*\w*\s*;/g)) {
+    let nextValue = 0;
+    for (const rawEntry of match[1].split(',')) {
+      const entry = rawEntry
+        .replace(/\/\*.*?\*\//g, '')
+        .replace(/\/\/.*$/, '')
+        .trim();
+      if (!entry) {
+        continue;
+      }
+
+      const enumMatch = entry.match(/^([A-Za-z_]\w*)(?:\s*=\s*(.+))?$/);
+      if (!enumMatch) {
+        continue;
+      }
+
+      const explicitValue = enumMatch[2]?.trim();
+      constants.push({
+        name: enumMatch[1],
+        value: explicitValue ?? String(nextValue)
+      });
+
+      nextValue = explicitValue && /^-?\d+$/.test(explicitValue)
+        ? Number(explicitValue) + 1
+        : nextValue + 1;
+    }
+  }
+
+  return constants;
+}
+
+function parseParameterTypes(parameters) {
+  const trimmed = parameters.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  if (trimmed === 'void') {
+    return ['void'];
+  }
+
+  return splitParameters(trimmed).map(toParameterType).filter(Boolean);
+}
+
+function functionSignature(fn) {
+  return `${fn.name}(${fn.parameterTypes.join(', ')})`;
+}
+
+function splitParameters(parameters) {
+  const result = [];
+  let current = '';
+  let depth = 0;
+
+  for (const char of parameters) {
+    if (char === '(') {
+      depth += 1;
+    } else if (char === ')') {
+      depth -= 1;
+    }
+
+    if (char === ',' && depth === 0) {
+      result.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.trim()) {
+    result.push(current.trim());
+  }
+
+  return result;
+}
+
+function toParameterType(parameter) {
+  const cleaned = parameter
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\[[^\]]*\]\s*$/, '')
+    .trim();
+
+  if (cleaned === '...') {
+    return '...';
+  }
+
+  const functionPointer = cleaned.match(/(.+?\(\s*\*)\s*[A-Za-z_]\w*(\s*\)\s*\(.+\))/);
+  if (functionPointer) {
+    return `${functionPointer[1]}${functionPointer[2]}`.replace(/\s+/g, ' ');
+  }
+
+  return normalizeType(cleaned
+    .replace(/\s*\*+\s*([A-Za-z_]\w*)$/, (match, name) => match.replace(name, '').trim())
+    .replace(/\s+([A-Za-z_]\w*)$/, ''));
+}
+
+function normalizeType(type) {
+  return type
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\*+\s*$/, (stars) => ` ${stars.trim()}`)
+    .trim();
 }
 
 function collectMemberNames(source) {
@@ -218,7 +403,7 @@ function isPreprocessorConditionLine(lineText, character) {
   return /^\s*#\s*(?:if|ifdef|ifndef|elif)\b/.test(prefix);
 }
 
-function addCandidate(candidates, label, kind, detail) {
+function addCandidate(candidates, label, kind, detail, insertText = label) {
   if (!label || candidates.has(label)) {
     return;
   }
@@ -226,7 +411,8 @@ function addCandidate(candidates, label, kind, detail) {
   candidates.set(label, {
     label,
     kind,
-    detail
+    detail,
+    insertText
   });
 }
 

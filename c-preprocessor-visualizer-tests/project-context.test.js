@@ -26,12 +26,13 @@ fs.writeFileSync(headerPath, [
   '#ifndef FEATURE_CONFIG_H',
   '#define FEATURE_CONFIG_H',
   '#define HEADER_FEATURE 1',
+  'int header_configure_runtime(const char *name);',
   '#endif',
   ''
 ].join('\n'));
 
 fs.writeFileSync(sourcePath, [
-  '#include "feature_config.h"',
+  '#include <feature_config.h>',
   '',
   '#if HEADER_FEATURE && COMMAND_LINE_FEATURE == 7',
   'int enabled_from_header_and_compile_command = 1;',
@@ -74,6 +75,10 @@ assert.deepStrictEqual(
   parsed.inactiveLines,
   [5],
   'headers and compile command macros should make only the #else branch inactive'
+);
+assert.ok(
+  options.includedTexts.join('\n').includes('header_configure_runtime'),
+  'include resolver should expose included header text for inactive completions'
 );
 
 const cachePath = path.join(buildDir, 'c-preprocessor-visualizer-cache.json');
