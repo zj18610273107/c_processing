@@ -3,7 +3,9 @@ const {
   parseDocument,
   findMatchingDirectiveLines,
   filterInactiveLinesForActiveBlock,
-  getDirectiveSpan
+  getDirectiveSpan,
+  getDirectiveActivationSpan,
+  isCharacterInDirectiveSpan
 } = require('../parser');
 
 const C_PREPROCESSOR_SOURCE = `
@@ -204,6 +206,36 @@ assert.deepStrictEqual(
   getDirectiveSpan('    #   endif'),
   { start: 4, end: 13 },
   'directive spans should include the # and directive keyword with internal spacing'
+);
+
+assert.strictEqual(
+  isCharacterInDirectiveSpan(getDirectiveSpan('#else'), 5),
+  true,
+  'cursor immediately after a directive keyword should still activate matching highlights'
+);
+
+assert.strictEqual(
+  isCharacterInDirectiveSpan(getDirectiveSpan('#else'), 6),
+  false,
+  'cursor after the directive token boundary should not activate matching highlights'
+);
+
+assert.strictEqual(
+  isCharacterInDirectiveSpan(getDirectiveActivationSpan('#ifdef AAAAAAAAAA'), 7),
+  true,
+  'cursor after whitespace following a directive keyword should still activate matching highlights'
+);
+
+assert.strictEqual(
+  isCharacterInDirectiveSpan(getDirectiveActivationSpan('#ifdef AAAAAAAAAA'), 8),
+  false,
+  'cursor inside the directive argument should not activate matching highlights'
+);
+
+assert.strictEqual(
+  isCharacterInDirectiveSpan(getDirectiveActivationSpan('#else   '), 8),
+  true,
+  'cursor after trailing whitespace following #else should still activate matching highlights'
 );
 
 const EDGE_CASE_SOURCE = `

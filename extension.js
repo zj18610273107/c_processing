@@ -3,7 +3,9 @@ const {
   parseDocument,
   findMatchingDirectiveLines,
   filterInactiveLinesForActiveBlock,
-  getDirectiveSpan
+  getDirectiveSpan,
+  getDirectiveActivationSpan,
+  isCharacterInDirectiveSpan
 } = require('./parser');
 const {
   collectCompletionCandidates,
@@ -277,12 +279,8 @@ function parseHexColor(color) {
 
 function findMatchingDirectiveRanges(editor, groups) {
   const cursorLine = editor.selection.active.line;
-  const activeSpan = getDirectiveSpan(editor.document.lineAt(cursorLine).text);
-  if (
-    !activeSpan ||
-    editor.selection.active.character < activeSpan.start ||
-    editor.selection.active.character >= activeSpan.end
-  ) {
+  const activeSpan = getDirectiveActivationSpan(editor.document.lineAt(cursorLine).text);
+  if (!isCharacterInDirectiveSpan(activeSpan, editor.selection.active.character)) {
     return [];
   }
 

@@ -311,11 +311,30 @@ function getDirectiveSpan(text) {
   };
 }
 
+function getDirectiveActivationSpan(text) {
+  const span = getDirectiveSpan(text);
+  if (!span) {
+    return undefined;
+  }
+
+  const trailingWhitespace = text.slice(span.end).match(/^\s*/)?.[0].length ?? 0;
+  return {
+    start: span.start,
+    end: span.end + trailingWhitespace
+  };
+}
+
+function isCharacterInDirectiveSpan(span, character) {
+  return Boolean(span && character >= span.start && character <= span.end);
+}
+
 module.exports = {
   parseDocument,
   parseDirective,
   parseMacroDefinition,
   findMatchingDirectiveLines,
   filterInactiveLinesForActiveBlock,
-  getDirectiveSpan
+  getDirectiveSpan,
+  getDirectiveActivationSpan,
+  isCharacterInDirectiveSpan
 };
